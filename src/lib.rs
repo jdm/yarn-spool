@@ -294,56 +294,6 @@ fn parse_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
     parse_toplevel_line(tokenizer, line)
 }
 
-/*fn parse_post_dialogue_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
-    let line = parse_line(tokenizer)?;
-    match line {
-        Line::If(s) => {
-            //TODO: parse steps until endif
-            panic!()
-        }
-        Line::Action(s) => {
-            panic!()
-        }
-        Line::Option(_, _) => {
-            panic!()
-        }
-        Line::InlineOption(_) => {
-            panic!()
-        }
-}*/
-
-/*fn parse_conditional_steps(
-    tokenizer: &mut TokenIterator
-) -> Result<(Vec<Steps>, ConditionalParseResult), ()> {
-    let mut steps = vec![];
-    loop {
-        if tokenizer.peek().ok_or(())? == Token::LeftAngle {
-        }
-            Token::LeftAngle {
-                let _ = tokenizer.next();
-                if tokenizer.next() != Some(Token::LeftAngle) {
-                    return Err(());
-                }
-                if tokenizer.next() == Some(Token::Word("endif".to_string())) {
-                    if tokenizer.next() != Some(Token::RightAngle) {
-                        return Err(());
-                    }
-                    if tokenizer.next() != Some(Token::RightAngle) {
-                        return Err(());
-                    }
-                    return Ok((steps, ConditionalParseResult::EndIf));
-                }
-            }
-            _ => steps.push_back(parse_step(tokenizer)?),
-        }
-    }
-}*/
-
-enum ConditionalParseResult {
-    ElseIf(Conditional),
-    EndIf,
-}
-
 #[derive(PartialEq)]
 enum ParseEnder {
     Node,

@@ -53,6 +53,7 @@ enum Comparison {
 enum Conditional {
     Truthy(Expr),
     Comparison(Expr, Comparison, Expr),
+    Tmp(String),
 }
 
 pub struct Node {
@@ -78,6 +79,7 @@ enum Line {
     If(String),
     ElseIf(String),
     Else,
+    EndIf,
     Action(String),
     Option(Option<String>, NodeName),
     InlineOption(String),
@@ -110,8 +112,11 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
             if rest.starts_with("elseif ") {
                 return Ok(Line::ElseIf(rest[7..].trim().to_owned()));
             }
-            if rest.starts_with("else") {
+            if rest.trim() == "else" {
                 return Ok(Line::ElseIf(rest[4..].trim().to_owned()));
+            }
+            if rest.trim() == "endif" {
+                return Ok(Line::EndIf);
             }
             return Ok(Line::Action(rest.trim().to_owned()));
         }
@@ -179,8 +184,59 @@ fn try_parse_option(tokenizer: &mut TokenIterator) -> Result<Option<DialogueOpti
     }
 }
 
-fn parse_step(tokenizer: &mut TokenIterator, phase: StepPhase) -> Result<Step, ()> {
-    let (_index, line) = parse_line(tokenizer)?;
+struct ConditionalParts {
+    if_steps: Vec<Step>,
+    else_ifs: Vec<(Conditional, Vec<Step>)>,
+    else_steps: Vec<Step>,
+}
+
+#[derive(PartialEq)]
+enum ConditionalParsePhase {
+    If,
+    ElseIf,
+    Else,
+}
+
+fn parse_conditional(tokenizer: &mut TokenIterator) -> Result<ConditionalParts, ()> {
+    let mut parts = ConditionalParts {
+        if_steps: vec![],
+        else_ifs: vec![],
+        else_steps: vec![],
+    };
+    let mut phase = ConditionalParsePhase::If;
+    loop {
+        let (_index, line) = parse_line(tokenizer)?;
+        match line {
+            Line::ElseIf(s) => {
+                if phase == ConditionalParsePhase::Else {
+                    return Err(());
+                }
+                phase = ConditionalParsePhase::ElseIf;
+                parts.else_ifs.push((Conditional::Tmp(s), vec![]));
+            }
+            Line::Else => {
+                if phase == ConditionalParsePhase::Else {
+                    return Err(());
+                }
+                phase = ConditionalParsePhase::Else;
+            }
+            Line::EndIf => {
+                return Ok(parts);
+            }
+            l => {
+                let step = parse_toplevel_line(tokenizer, l)?;
+                let steps = match phase {
+                    ConditionalParsePhase::If => &mut parts.if_steps,
+                    ConditionalParsePhase::ElseIf => &mut parts.else_ifs.iter_mut().last().unwrap().1,
+                    ConditionalParsePhase::Else => &mut parts.else_steps,
+                };
+                steps.push(step);
+            }
+        }
+    }
+}
+
+fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step, ()> {
     match line {
         Line::Dialogue(s) => {
             println!("found dialogue '{}'", s);
@@ -205,28 +261,29 @@ fn parse_step(tokenizer: &mut TokenIterator, phase: StepPhase) -> Result<Step, (
             return Ok(Step::Dialogue(s, choices));
         }
         Line::If(s) => {
-            //TODO: parse steps until endif
-            panic!()
+            let parts = parse_conditional(tokenizer)?;
+            return Ok(Step::Conditional(Conditional::Tmp(s),
+                                        parts.if_steps,
+                                        parts.else_ifs,
+                                        parts.else_steps));
         }
         Line::Action(s) => {
             panic!()
         }
-        Line::ElseIf(_) if phase == StepPhase::Conditional => {
-            panic!()
-        }
-        Line::Else if phase == StepPhase::Conditional => {
-            panic!()
-        }
-        Line::Else | Line::ElseIf(_) => {
+        Line::EndIf |
+        Line::ElseIf(_) |
+        Line::Else |
+        Line::EndIf |
+        Line::Option(..) |
+        Line::InlineOption(..) =>
             return Err(())
-        }
-        Line::Option(_, _) => {
-            panic!()
-        }
-        Line::InlineOption(_) => {
-            panic!()
-        }        
     }
+}
+
+
+fn parse_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
+    let (_indent, line) = parse_line(tokenizer)?;
+    parse_toplevel_line(tokenizer, line)
 }
 
 /*fn parse_post_dialogue_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
@@ -285,7 +342,7 @@ enum ParseEnder {
     If,
 }
 
-fn parse_steps_until(tokenizer: &mut TokenIterator, phase: StepPhase, ender: ParseEnder) -> Result<Vec<Step>, ()> {
+fn parse_steps_until(tokenizer: &mut TokenIterator, _phase: StepPhase, ender: ParseEnder) -> Result<Vec<Step>, ()> {
     let mut steps = vec![];
     loop {
         match tokenizer.peek().ok_or(())? {
@@ -315,7 +372,7 @@ fn parse_steps_until(tokenizer: &mut TokenIterator, phase: StepPhase, ender: Par
                 }
                 return Ok(steps);
             }
-            _ => steps.push(parse_step(tokenizer, phase)?),
+            _ => steps.push(parse_step(tokenizer)?),
         }
     }
 }
@@ -480,7 +537,7 @@ impl<'a> Iterator for TokenIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, parse_step};
+    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, parse_step};
 
     #[test]
     fn tokenize_number() {
@@ -560,7 +617,7 @@ mod tests {
     fn parse_dialogue_with_option() {
         let input = "this is dialogue\n[[this is a choice|targetnode]]";
         let mut t = TokenIterator::new(input);
-        let step = parse_step(&mut t, StepPhase::Toplevel).unwrap();
+        let step = parse_step(&mut t).unwrap();
         assert_eq!(step, Step::Dialogue("this is dialogue".to_string(),
                                         vec![Choice {
                                             text: "this is a choice".to_string(),
@@ -573,7 +630,7 @@ mod tests {
     fn parse_dialogue_with_two_options() {
         let input = "this is dialogue\n[[this is a choice|targetnode]]\n[[this is another choice|targetnode2]]";
         let mut t = TokenIterator::new(input);
-        let step = parse_step(&mut t, StepPhase::Toplevel).unwrap();
+        let step = parse_step(&mut t).unwrap();
         assert_eq!(step, Step::Dialogue("this is dialogue".to_string(),
                                         vec![Choice {
                                             text: "this is a choice".to_string(),
@@ -586,4 +643,25 @@ mod tests {
                                             condition: None
                                         }]));
     }
+
+    #[test]
+    fn parse_conditional_dialogue() {
+        let input = "<<if true>>\nthis is dialogue\n[[this is a choice|targetnode]]\n<<endif>>";
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t).unwrap();
+        let expected = Step::Conditional(
+            Conditional::Tmp("true".to_string()),
+            vec![Step::Dialogue(
+                "this is dialogue".to_string(),
+                vec![Choice {
+                    text: "this is a choice".to_string(),
+                    target: NodeName("targetnode".to_string()),
+                    condition: None
+                }])],
+            vec![],
+            vec![]
+        );
+        assert_eq!(step, expected);
+    }
+
 }

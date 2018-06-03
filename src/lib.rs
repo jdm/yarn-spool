@@ -353,7 +353,7 @@ fn parse_node(tokenizer: &mut TokenIterator) -> Result<Node, ()> {
     }
 }
 
-fn parse_yarn_file(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
+fn parse_nodes(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
     let mut nodes = vec![];
     while tokenizer.peek().is_some() {
         nodes.push(parse_node(tokenizer)?);
@@ -509,7 +509,7 @@ impl<'a> Iterator for TokenIterator<'a> {
 mod tests {
     use std::collections::HashMap;
     use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
-    use super::{parse_step, parse_node_contents, parse_node};
+    use super::{parse_step, parse_node_contents, parse_node, parse_nodes};
 
     #[test]
     fn tokenize_number() {
@@ -785,5 +785,65 @@ dialogue3
         };
         let node = parse_node(&mut t).unwrap();
         assert_eq!(node, expected);
+    }
+
+    #[test]
+    fn parse_multiple_nodes() {
+        let input = r#"title: whee hello
+extra: hi there
+---
+dialogue
+dialogue2
+dialogue3
+===
+
+
+extra: foo bar -5
+title: title!
+---
+dialogue
+[[option|whee hello]]
+[[option2|title!]]
+===
+"#;
+        let mut t = TokenIterator::new(input);
+        let mut extra = HashMap::new();
+        extra.insert("extra".to_string(), "hi there".to_string());
+        let mut extra2 = HashMap::new();
+        extra2.insert("extra".to_string(), "foo bar -5".to_string());
+        let expected = vec![
+            Node {
+                title: NodeName("whee hello".to_string()),
+                extra: extra,
+                steps: vec![
+                    Step::Dialogue("dialogue".to_string(), vec![]),
+                    Step::Dialogue("dialogue2".to_string(), vec![]),
+                    Step::Dialogue("dialogue3".to_string(), vec![]),
+                ],
+                visited: false,
+            },
+            Node {
+                title: NodeName("title!".to_string()),
+                extra: extra2,
+                steps: vec![
+                    Step::Dialogue("dialogue".to_string(), vec![
+                        Choice {
+                            text: "option".to_string(),
+                            target: NodeName("whee hello".to_string()),
+                            condition: None,
+                        },
+                        Choice {
+                            text: "option2".to_string(),
+                            target: NodeName("title!".to_string()),
+                            condition: None,
+                        },
+                    ]),
+                ],
+                visited: false,
+            },
+        ];
+
+        let nodes = parse_nodes(&mut t).unwrap();
+        assert_eq!(nodes, expected);
     }
 }

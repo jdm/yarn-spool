@@ -525,6 +525,9 @@ impl<'a> Iterator for TokenIterator<'a> {
                 '>' => return Some(Token::RightAngle),
                 '=' => return Some(Token::Equals),
                 '-' => return Some(Token::Minus),
+                '+' => return Some(Token::Plus),
+                '*' => return Some(Token::Star),
+                '/' => return Some(Token::Slash),
                 '!' => return Some(Token::ExclamationMark),
                 '[' => return Some(Token::LeftBracket),
                 ']' => return Some(Token::RightBracket),
@@ -581,7 +584,7 @@ impl<'a> Iterator for TokenIterator<'a> {
 mod tests {
     use std::collections::HashMap;
     use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
-    use super::{Expr, Term, UnaryOp};
+    use super::{Expr, Term, UnaryOp, BinaryOp};
     use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr};
 
     #[test]
@@ -932,6 +935,16 @@ dialogue
         let input = "-5.4";
         let mut t = TokenIterator::new(input);
         let expected = Expr::Unary(UnaryOp::Negate, Box::new(Expr::Term(Term::Number(5.4))));
+        assert_eq!(parse_expr(&mut t).unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_addition() {
+        let input = "4 + 8";
+        let mut t = TokenIterator::new(input);
+        let expected = Expr::Binary(BinaryOp::Plus,
+                                    Box::new(Expr::Term(Term::Number(4.0))),
+                                    Box::new(Expr::Term(Term::Number(8.0))));
         assert_eq!(parse_expr(&mut t).unwrap(), expected);
     }
 }

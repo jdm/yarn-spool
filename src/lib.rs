@@ -294,38 +294,16 @@ fn parse_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
     parse_toplevel_line(tokenizer, line)
 }
 
-#[derive(PartialEq)]
-enum ParseEnder {
-    Node,
-    If,
-}
-
-fn parse_steps_until(tokenizer: &mut TokenIterator, _phase: StepPhase, ender: ParseEnder) -> Result<Vec<Step>, ()> {
+fn parse_node_contents(tokenizer: &mut TokenIterator) -> Result<Vec<Step>, ()> {
     let mut steps = vec![];
     loop {
         match tokenizer.peek().ok_or(())? {
-            '=' if ender == ParseEnder::Node => {
+            '=' => {
                 let _ = tokenizer.next();
                 if tokenizer.next() != Some(Token::Equals) {
                     return Err(());
                 }
                 if tokenizer.next() != Some(Token::Equals) {
-                    return Err(());
-                }
-                return Ok(steps);
-            }
-            '<' if ender == ParseEnder::If => {
-                let _ = tokenizer.next();
-                if tokenizer.next() != Some(Token::LeftAngle) {
-                    return Err(());
-                }
-                if tokenizer.next() != Some(Token::Word("endif".to_string())) {
-                    return Err(());
-                }
-                if tokenizer.next() != Some(Token::RightAngle) {
-                    return Err(());
-                }
-                if tokenizer.next() != Some(Token::RightAngle) {
                     return Err(());
                 }
                 return Ok(steps);
@@ -333,10 +311,6 @@ fn parse_steps_until(tokenizer: &mut TokenIterator, _phase: StepPhase, ender: Pa
             _ => steps.push(parse_step(tokenizer)?),
         }
     }
-}
-
-fn parse_node_contents(tokenizer: &mut TokenIterator) -> Result<Vec<Step>, ()> {
-    parse_steps_until(tokenizer, StepPhase::Toplevel, ParseEnder::Node)
 }
 
 fn parse_yarn_file(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
@@ -495,7 +469,8 @@ impl<'a> Iterator for TokenIterator<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, parse_step};
+    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional};
+    use super::{parse_step, parse_node_contents};
 
     #[test]
     fn tokenize_number() {
@@ -723,5 +698,24 @@ whatever
         assert_eq!(step, Step::Command("move doo to wop".to_string()));
         let step = parse_step(&mut t).unwrap();
         assert_eq!(step, Step::Command("hi".to_string()));
+    }
+
+    #[test]
+    fn parse_until_end_of_node() {
+        let input = r#"dialogue
+dialogue2
+dialogue3
+===
+more
+"#;
+        let mut t = TokenIterator::new(input);
+        let steps = parse_node_contents(&mut t).unwrap();
+        let expected = vec![
+            Step::Dialogue("dialogue".to_string(), vec![]),
+            Step::Dialogue("dialogue2".to_string(), vec![]),
+            Step::Dialogue("dialogue3".to_string(), vec![]),
+        ];
+        assert_eq!(steps, expected);
+        assert_eq!(t.next().unwrap(), Token::Word("more".to_string()));
     }
 }

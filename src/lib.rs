@@ -26,17 +26,36 @@ enum Step {
 
 #[derive(Debug, PartialEq)]
 enum Expr {
+    Unary(UnaryOp, Box<Expr>),
+    Binary(BinaryOp, Box<Expr>, Box<Expr>),
+    Term(Term),
+}
+
+#[derive(Debug, PartialEq)]
+enum UnaryOp {
+    Not,
+    Negate,
+}
+
+#[derive(Debug, PartialEq)]
+enum BinaryOp {
+    And,
+    Or,
+    Plus,
+    Minus,
+    Multiply,
+    Divide,
+    Equals,
+    NotEquals,
+}
+
+#[derive(Debug, PartialEq)]
+enum Term {
     Number(f32),
     Boolean(bool),
     String(String),
     Variable(VariableName),
-    And(Box<Expr>, Box<Expr>),
-    Or(Box<Expr>, Box<Expr>),
-    Function(String, Vec<String>),
-    Not(Box<Expr>),
-    Plus(Box<Expr>, Box<Expr>),
-    Minus(Box<Expr>, Box<Expr>),
-    Times(Box<Expr>, Box<Expr>),
+    Function(String, Vec<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -72,7 +91,60 @@ impl YarnEngine {
 }
 
 fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
-    panic!()
+    let t = tokenizer.next().ok_or(())?;
+    let left = match t {
+        Token::Number(num) => Expr::Term(Term::Number(num)),
+        Token::ExclamationMark => {
+            let expr = parse_expr(tokenizer)?;
+            Expr::Unary(UnaryOp::Not, Box::new(expr))
+        }
+        Token::Minus => {
+            let expr = parse_expr(tokenizer)?;
+            Expr::Unary(UnaryOp::Negate, Box::new(expr))
+        }
+        Token::DollarSign => {
+            let name = match tokenizer.next().ok_or(())? {
+                Token::Word(name) => name,
+                _ => return Err(()),
+            };
+            Expr::Term(Term::Variable(VariableName(name)))
+        }
+        _ => return Err(()),
+    };
+    if tokenizer.peek().is_none() {
+        return Ok(left);
+    }
+
+    let op = match tokenizer.next().unwrap() {
+        Token::Plus => BinaryOp::Plus,
+        Token::Minus => BinaryOp::Minus,
+        Token::Star => BinaryOp::Multiply,
+        Token::Slash => BinaryOp::Divide,
+        Token::ExclamationMark => {
+            if tokenizer.next().ok_or(())? != Token::Equals {
+                return Err(());
+            }
+            BinaryOp::NotEquals
+        }
+        Token::Equals => {
+            if tokenizer.next().ok_or(())? != Token::Equals {
+                return Err(());
+            }
+            BinaryOp::Equals
+        }
+        Token::Word(word) => {
+            match &*word {
+                "and" => BinaryOp::And,
+                "or" => BinaryOp::Or,
+                "eq" => BinaryOp::Equals,
+                "neq" => BinaryOp::NotEquals,
+                _ => return Err(()),
+            }
+        }
+        _ => return Err(()),
+    };
+    let right = parse_expr(tokenizer)?;
+    Ok(Expr::Binary(op, Box::new(left), Box::new(right)))
 }
 
 enum Line {
@@ -509,7 +581,8 @@ impl<'a> Iterator for TokenIterator<'a> {
 mod tests {
     use std::collections::HashMap;
     use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
-    use super::{parse_step, parse_node_contents, parse_node, parse_nodes};
+    use super::{Expr, Term, UnaryOp};
+    use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr};
 
     #[test]
     fn tokenize_number() {
@@ -845,5 +918,20 @@ dialogue
 
         let nodes = parse_nodes(&mut t).unwrap();
         assert_eq!(nodes, expected);
+    }
+
+    #[test]
+    fn parse_number_expression() {
+        let input = "5.4";
+        let mut t = TokenIterator::new(input);
+        assert_eq!(parse_expr(&mut t).unwrap(), Expr::Term(Term::Number(5.4)));
+    }
+
+    #[test]
+    fn parse_negative_number_expression() {
+        let input = "-5.4";
+        let mut t = TokenIterator::new(input);
+        let expected = Expr::Unary(UnaryOp::Negate, Box::new(Expr::Term(Term::Number(5.4))));
+        assert_eq!(parse_expr(&mut t).unwrap(), expected);
     }
 }

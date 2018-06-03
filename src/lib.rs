@@ -268,7 +268,15 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step
                                         parts.else_steps));
         }
         Line::Action(s) => {
-            panic!()
+            if s.starts_with("set ") {
+                let rest = &s[4..].trim();
+                let var_end = rest.find(' ').ok_or(())?;
+                let var = &rest[0..var_end];
+                let mut tokenizer = TokenIterator::new(&rest[var_end..]);
+                let expr = parse_expr(&mut tokenizer)?;
+                return Ok(Step::Assign(VariableName(var.to_string()), expr));
+            }
+            return Ok(Step::Command(s));
         }
         Line::EndIf |
         Line::ElseIf(_) |
@@ -747,5 +755,23 @@ whatever
             ]
         );
         assert_eq!(step, expected);
+    }
+
+    #[test]
+    fn parse_command() {
+        let input = "<<move doo to wop>>";
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t).unwrap();
+        assert_eq!(step, Step::Command("move doo to wop".to_string()));
+    }
+
+    #[test]
+    fn parse_commands() {
+        let input = "<<move doo to wop>>\n<<hi>>";
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t).unwrap();
+        assert_eq!(step, Step::Command("move doo to wop".to_string()));
+        let step = parse_step(&mut t).unwrap();
+        assert_eq!(step, Step::Command("hi".to_string()));
     }
 }

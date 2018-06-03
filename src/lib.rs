@@ -361,7 +361,13 @@ impl<'a> TokenIterator<'a> {
     }
 
     fn peek(&mut self) -> Option<char> {
-        let ch = self.next_char();
+        let mut ch;
+        loop {
+            ch = self.next_char();
+            if ch != Some('\n') {
+                break;
+            }
+        }
         self.last_char = ch;
         ch
     }
@@ -559,6 +565,24 @@ mod tests {
                                         vec![Choice {
                                             text: "this is a choice".to_string(),
                                             target: NodeName("targetnode".to_string()),
+                                            condition: None
+                                        }]));
+    }
+
+    #[test]
+    fn parse_dialogue_with_two_options() {
+        let input = "this is dialogue\n[[this is a choice|targetnode]]\n[[this is another choice|targetnode2]]";
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t, StepPhase::Toplevel).unwrap();
+        assert_eq!(step, Step::Dialogue("this is dialogue".to_string(),
+                                        vec![Choice {
+                                            text: "this is a choice".to_string(),
+                                            target: NodeName("targetnode".to_string()),
+                                            condition: None
+                                        },
+                                        Choice {
+                                            text: "this is another choice".to_string(),
+                                            target: NodeName("targetnode2".to_string()),
                                             condition: None
                                         }]));
     }

@@ -56,6 +56,7 @@ enum Conditional {
     Tmp(String),
 }
 
+#[derive(Debug, PartialEq)]
 pub struct Node {
     title: NodeName,
     extra: HashMap<String, String>,
@@ -136,7 +137,10 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
             }
             return Ok(Line::Option(None, NodeName(first.to_string())));
         }
-        Token::Arrow => {
+        Token::Minus => {
+            if tokenizer.next().ok_or(())? != Token::RightAngle {
+                return Err(());
+            }
             let rest = tokenizer.remainder_of_line().ok_or(())?;
             return Ok(Line::InlineOption(rest));
         }
@@ -313,8 +317,48 @@ fn parse_node_contents(tokenizer: &mut TokenIterator) -> Result<Vec<Step>, ()> {
     }
 }
 
+fn parse_node(tokenizer: &mut TokenIterator) -> Result<Node, ()> {
+    let mut node = Node {
+        title: NodeName(String::new()),
+        extra: HashMap::new(),
+        steps: vec![],
+        visited: false,
+    };
+    loop {
+        let t = tokenizer.next().ok_or(())?;
+        match t {
+            Token::Word(name) => {
+                let value = tokenizer.remainder_of_line().ok_or(())?;
+                if name == "title:" {
+                    if !node.title.0.is_empty() {
+                        return Err(());
+                    }
+                    node.title.0 = value.trim().to_string();
+                } else {
+                    node.extra.insert(name[..name.len()-1].to_string(), value.trim().to_string());
+                }
+            }
+            Token::Minus => {
+                if tokenizer.next().ok_or(())? != Token::Minus {
+                    return Err(());
+                }
+                if tokenizer.next().ok_or(())? != Token::Minus {
+                    return Err(());
+                }
+                node.steps = parse_node_contents(tokenizer)?;
+                return Ok(node);
+            }
+            _ => return Err(()),
+        }
+    }
+}
+
 fn parse_yarn_file(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
-    panic!()
+    let mut nodes = vec![];
+    while tokenizer.peek().is_some() {
+        nodes.push(parse_node(tokenizer)?);
+    }
+    Ok(nodes)
 }
 
 #[derive(Debug, PartialEq)]
@@ -324,12 +368,16 @@ enum Token {
     RightAngle,
     Equals,
     Pipe,
+    Plus,
+    Minus,
+    Star,
+    Slash,
     ExclamationMark,
-    Arrow,
     LeftBracket,
     RightBracket,
     Number(f32),
     Word(String),
+    StartNode,
 }
 
 struct TokenIterator<'a> {
@@ -393,23 +441,18 @@ impl<'a> Iterator for TokenIterator<'a> {
     type Item = Token;
     fn next(&mut self) -> Option<Token> {
         let mut buffer = String::new();
-        let mut saw_hyphen = false;
         loop {
             let mut ch = self.next_char()?;
             if ch != ' ' {
                 self.start_of_line = false;
             }
-            if ch == '-' {
-                saw_hyphen = true;
-                ch = self.next_char()?;
-            }
             match ch {
                 '|' => return Some(Token::Pipe),
                 '$' => return Some(Token::DollarSign),
                 '<' => return Some(Token::LeftAngle),
-                '>' if saw_hyphen => return Some(Token::Arrow),
                 '>' => return Some(Token::RightAngle),
                 '=' => return Some(Token::Equals),
+                '-' => return Some(Token::Minus),
                 '!' => return Some(Token::ExclamationMark),
                 '[' => return Some(Token::LeftBracket),
                 ']' => return Some(Token::RightBracket),
@@ -433,11 +476,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             }
                         }
                     }
-                    let mut value = buffer.parse().ok()?;
-                    if saw_hyphen {
-                        value *= -1.;
-                    }
-                    return Some(Token::Number(value));
+                    return Some(Token::Number(buffer.parse().ok()?));
                 }
                 ' ' if self.start_of_line => self.last_indent += 1,
                 ' ' => (),
@@ -462,21 +501,22 @@ impl<'a> Iterator for TokenIterator<'a> {
                     }
                 }
             }
-            saw_hyphen = false;
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional};
-    use super::{parse_step, parse_node_contents};
+    use std::collections::HashMap;
+    use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
+    use super::{parse_step, parse_node_contents, parse_node};
 
     #[test]
     fn tokenize_number() {
         let input = "-1.23";
         let mut t = TokenIterator::new(input);
-        assert_eq!(t.next().unwrap(), Token::Number(-1.23));
+        assert_eq!(t.next().unwrap(), Token::Minus);
+        assert_eq!(t.next().unwrap(), Token::Number(1.23));
         assert!(t.next().is_none());
     }
 
@@ -484,7 +524,8 @@ mod tests {
     fn tokenize_numbers() {
         let input = "-123.232 55 21.4 0.2";
         let mut t = TokenIterator::new(input);
-        assert_eq!(t.next().unwrap(), Token::Number(-123.232));
+        assert_eq!(t.next().unwrap(), Token::Minus);
+        assert_eq!(t.next().unwrap(), Token::Number(123.232));
         assert_eq!(t.next().unwrap(), Token::Number(55.));
         assert_eq!(t.next().unwrap(), Token::Number(21.4));
         assert_eq!(t.next().unwrap(), Token::Number(0.2));
@@ -516,7 +557,8 @@ mod tests {
         assert_eq!(t.next().unwrap(), Token::Word("why".to_string()));
         assert_eq!(t.next().unwrap(), Token::Number(5.));
         assert_eq!(t.next().unwrap(), Token::Word("hello".to_string()));
-        assert_eq!(t.next().unwrap(), Token::Number(-0.1));
+        assert_eq!(t.next().unwrap(), Token::Minus);
+        assert_eq!(t.next().unwrap(), Token::Number(0.1));
         assert_eq!(t.next().unwrap(), Token::Word("there".to_string()));
         assert!(t.next().is_none());
     }
@@ -717,5 +759,31 @@ more
         ];
         assert_eq!(steps, expected);
         assert_eq!(t.next().unwrap(), Token::Word("more".to_string()));
+    }
+
+    #[test]
+    fn parse_whole_node() {
+        let input = r#"title: whee hello
+extra: hi there
+---
+dialogue
+dialogue2
+dialogue3
+==="#;
+        let mut t = TokenIterator::new(input);
+        let mut extra = HashMap::new();
+        extra.insert("extra".to_string(), "hi there".to_string());
+        let expected = Node {
+            title: NodeName("whee hello".to_string()),
+            extra: extra,
+            steps: vec![
+                Step::Dialogue("dialogue".to_string(), vec![]),
+                Step::Dialogue("dialogue2".to_string(), vec![]),
+                Step::Dialogue("dialogue3".to_string(), vec![]),
+            ],
+            visited: false,
+        };
+        let node = parse_node(&mut t).unwrap();
+        assert_eq!(node, expected);
     }
 }

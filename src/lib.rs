@@ -695,4 +695,57 @@ this is other dialogue
         );
         assert_eq!(step, expected);
     }
+
+    #[test]
+    fn parse_conditional_dialogue_with_else_if() {
+        let input = r#"<<if true>>
+this is dialogue
+[[this is a choice|targetnode]]
+<<elseif false>>
+this is other dialogue
+[[this is another choice|targetnode2]]
+<<elseif true>>
+third dialogue!
+<<else>>
+whatever
+[[look a choice|targetnode3]]
+<<endif>>"#;
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t).unwrap();
+        let expected = Step::Conditional(
+            Conditional::Tmp("true".to_string()),
+            vec![Step::Dialogue(
+                "this is dialogue".to_string(),
+                vec![Choice {
+                    text: "this is a choice".to_string(),
+                    target: NodeName("targetnode".to_string()),
+                    condition: None
+                }])
+            ],
+            vec![(Conditional::Tmp("false".to_string()),
+                  vec![Step::Dialogue(
+                      "this is other dialogue".to_string(),
+                      vec![Choice {
+                          text: "this is another choice".to_string(),
+                          target: NodeName("targetnode2".to_string()),
+                          condition: None
+                      }])
+                  ]),
+                 (Conditional::Tmp("true".to_string()),
+                  vec![Step::Dialogue(
+                      "third dialogue!".to_string(),
+                      vec![])
+                  ])
+            ],
+            vec![Step::Dialogue(
+                "whatever".to_string(),
+                vec![Choice {
+                    text: "look a choice".to_string(),
+                    target: NodeName("targetnode3".to_string()),
+                    condition: None
+                }])
+            ]
+        );
+        assert_eq!(step, expected);
+    }
 }

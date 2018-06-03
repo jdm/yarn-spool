@@ -113,7 +113,7 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
                 return Ok(Line::ElseIf(rest[7..].trim().to_owned()));
             }
             if rest.trim() == "else" {
-                return Ok(Line::ElseIf(rest[4..].trim().to_owned()));
+                return Ok(Line::Else);
             }
             if rest.trim() == "endif" {
                 return Ok(Line::EndIf);
@@ -664,4 +664,35 @@ mod tests {
         assert_eq!(step, expected);
     }
 
+    #[test]
+    fn parse_conditional_dialogue_with_else() {
+        let input = r#"<<if true>>
+this is dialogue
+[[this is a choice|targetnode]]
+<<else>>
+this is other dialogue
+[[this is another choice|targetnode2]]
+<<endif>>"#;
+        let mut t = TokenIterator::new(input);
+        let step = parse_step(&mut t).unwrap();
+        let expected = Step::Conditional(
+            Conditional::Tmp("true".to_string()),
+            vec![Step::Dialogue(
+                "this is dialogue".to_string(),
+                vec![Choice {
+                    text: "this is a choice".to_string(),
+                    target: NodeName("targetnode".to_string()),
+                    condition: None
+                }])],
+            vec![],
+            vec![Step::Dialogue(
+                "this is other dialogue".to_string(),
+                vec![Choice {
+                    text: "this is another choice".to_string(),
+                    target: NodeName("targetnode2".to_string()),
+                    condition: None
+                }])]
+        );
+        assert_eq!(step, expected);
+    }
 }

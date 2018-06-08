@@ -29,6 +29,7 @@ enum Expr {
     Unary(UnaryOp, Box<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Term(Term),
+    Parentheses(Box<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -109,10 +110,14 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
             };
             Expr::Term(Term::Variable(VariableName(name)))
         }
+        Token::LeftParenthesis => {
+            Expr::Parentheses(Box::new(parse_expr(tokenizer)?))
+        }
         _ => return Err(()),
     };
-    if tokenizer.peek().is_none() {
-        return Ok(left);
+    match tokenizer.peek() {
+        Some(')') | None => return Ok(left),
+        _ => (),
     }
 
     let op = match tokenizer.next().unwrap() {
@@ -447,6 +452,8 @@ enum Token {
     ExclamationMark,
     LeftBracket,
     RightBracket,
+    LeftParenthesis,
+    RightParenthesis,
     Number(f32),
     Word(String),
     StartNode,
@@ -519,6 +526,8 @@ impl<'a> Iterator for TokenIterator<'a> {
                 self.start_of_line = false;
             }
             match ch {
+                '(' => return Some(Token::LeftParenthesis),
+                ')' => return Some(Token::RightParenthesis),
                 '|' => return Some(Token::Pipe),
                 '$' => return Some(Token::DollarSign),
                 '<' => return Some(Token::LeftAngle),
@@ -945,6 +954,17 @@ dialogue
         let expected = Expr::Binary(BinaryOp::Plus,
                                     Box::new(Expr::Term(Term::Number(4.0))),
                                     Box::new(Expr::Term(Term::Number(8.0))));
+        assert_eq!(parse_expr(&mut t).unwrap(), expected);
+    }
+
+    #[test]
+    fn parse_parentheses() {
+        let input = "(4 + 8)";
+        let mut t = TokenIterator::new(input);
+        let expected = Expr::Parentheses(
+            Box::new(Expr::Binary(BinaryOp::Plus,
+                                  Box::new(Expr::Term(Term::Number(4.0))),
+                                  Box::new(Expr::Term(Term::Number(8.0))))));
         assert_eq!(parse_expr(&mut t).unwrap(), expected);
     }
 }

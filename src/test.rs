@@ -1,7 +1,7 @@
 use std::collections::HashMap;
-use super::{TokenIterator, Token, Step, Choice, NodeName, Node};
-use super::{Expr, Term, UnaryOp, BinaryOp, Line, VariableName};
-use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
+use engine::{Expr, Term, UnaryOp, BinaryOp, VariableName, NodeName, Node, Choice, Step};
+use parse::{TokenIterator, Token, Line};
+use parse::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
 
 #[test]
 fn tokenize_number() {

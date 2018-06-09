@@ -11,7 +11,6 @@ struct VariableName(String);
 struct Choice {
     text: String,
     target: NodeName,
-    condition: Option<Conditional>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -152,6 +151,7 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
     Ok(Expr::Binary(op, Box::new(left), Box::new(right)))
 }
 
+#[derive(Debug, PartialEq)]
 enum Line {
     Dialogue(String),
     If(String),
@@ -160,7 +160,7 @@ enum Line {
     EndIf,
     Action(String),
     Option(Option<String>, NodeName),
-    InlineOption(String),
+    InlineOption(String, Option<String>),
 }
 
 fn parse_line(tokenizer: &mut TokenIterator) -> Result<(u32, Line), ()> {
@@ -219,7 +219,15 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
                 return Err(());
             }
             let rest = tokenizer.remainder_of_line().ok_or(())?;
-            return Ok(Line::InlineOption(rest));
+            let (text, cond) = match rest.find("<<") {
+                Some(idx) => {
+                    let remainder = &rest[idx + 2..];
+                    let end = remainder.find(">>").ok_or(())?;
+                    (rest[..idx].trim().to_string(), Some(remainder[..end].trim().to_string()))
+                }
+                None => (rest, None),
+            };
+            return Ok(Line::InlineOption(text, cond));
         }
         _ => return Err(()),
     }
@@ -244,7 +252,7 @@ enum StepPhase {
 
 #[derive(Debug)]
 enum DialogueOption {
-    Inline(String),
+    Inline(String, Option<String>),
     External(String, NodeName),
 }
 
@@ -257,7 +265,7 @@ fn try_parse_option(tokenizer: &mut TokenIterator) -> Result<Option<DialogueOpti
         let (_indent, line) = parse_line(tokenizer)?;
         match line {
             Line::Option(Some(text), name) => Ok(Some(DialogueOption::External(text, name))),
-            Line::InlineOption(s) => Ok(Some(DialogueOption::Inline(s))),
+            Line::InlineOption(s, condition) => Ok(Some(DialogueOption::Inline(s, condition))),
             _ => unreachable!(),
         }
     } else {
@@ -326,14 +334,13 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step
                 let opt = try_parse_option(tokenizer)?;
                 println!("found opt {:?}", opt);
                 match opt {
-                    Some(DialogueOption::Inline(s)) => {
+                    Some(DialogueOption::Inline(_s, _condition)) => {
                         return Err(()); //TODO
                     }
                     Some(DialogueOption::External(text, node)) => {
                         choices.push(Choice {
                             text: text,
                             target: node,
-                            condition: None, //TODO
                         });
                     }
                     None => break,

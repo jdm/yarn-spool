@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
-use super::{Expr, Term, UnaryOp, BinaryOp};
-use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr};
+use super::{Expr, Term, UnaryOp, BinaryOp, Line};
+use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
 
 #[test]
 fn tokenize_number() {
@@ -89,7 +89,6 @@ fn parse_dialogue_with_option() {
                                     vec![Choice {
                                         text: "this is a choice".to_string(),
                                         target: NodeName("targetnode".to_string()),
-                                        condition: None
                                     }]));
 }
 
@@ -102,12 +101,10 @@ fn parse_dialogue_with_two_options() {
                                     vec![Choice {
                                         text: "this is a choice".to_string(),
                                         target: NodeName("targetnode".to_string()),
-                                        condition: None
                                     },
                                          Choice {
                                              text: "this is another choice".to_string(),
                                              target: NodeName("targetnode2".to_string()),
-                                             condition: None
                                          }]));
 }
 
@@ -123,7 +120,6 @@ fn parse_conditional_dialogue() {
             vec![Choice {
                 text: "this is a choice".to_string(),
                 target: NodeName("targetnode".to_string()),
-                condition: None
             }])],
         vec![],
         vec![]
@@ -149,7 +145,6 @@ this is other dialogue
             vec![Choice {
                 text: "this is a choice".to_string(),
                 target: NodeName("targetnode".to_string()),
-                condition: None
             }])],
         vec![],
         vec![Step::Dialogue(
@@ -157,7 +152,6 @@ this is other dialogue
             vec![Choice {
                 text: "this is another choice".to_string(),
                 target: NodeName("targetnode2".to_string()),
-                condition: None
             }])]
     );
     assert_eq!(step, expected);
@@ -186,7 +180,6 @@ whatever
             vec![Choice {
                 text: "this is a choice".to_string(),
                 target: NodeName("targetnode".to_string()),
-                condition: None
             }])
         ],
         vec![(Conditional::Tmp("false".to_string()),
@@ -195,7 +188,6 @@ whatever
                   vec![Choice {
                       text: "this is another choice".to_string(),
                       target: NodeName("targetnode2".to_string()),
-                      condition: None
                   }])
               ]),
              (Conditional::Tmp("true".to_string()),
@@ -209,7 +201,6 @@ whatever
             vec![Choice {
                 text: "look a choice".to_string(),
                 target: NodeName("targetnode3".to_string()),
-                condition: None
             }])
         ]
     );
@@ -322,12 +313,10 @@ dialogue
                     Choice {
                         text: "option".to_string(),
                         target: NodeName("whee hello".to_string()),
-                        condition: None,
                     },
                     Choice {
                         text: "option2".to_string(),
                         target: NodeName("title!".to_string()),
-                        condition: None,
                     },
                 ]),
             ],
@@ -381,4 +370,13 @@ fn parse_jump() {
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     assert_eq!(step, Step::Jump(NodeName("SomeNode.Walk".to_string())));
+}
+
+#[test]
+fn parse_inline_option_with_condition() {
+    let input = "-> This is some text << if $money >= 5 >>";
+    let mut t = TokenIterator::new(input);
+    let (_indent, line) = parse_line(&mut t).unwrap();
+    assert_eq!(line, Line::InlineOption("This is some text".to_string(),
+                                        Some("if $money >= 5".to_string())));
 }

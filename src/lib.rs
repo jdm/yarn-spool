@@ -1,5 +1,3 @@
-#![allow(unused)]
-
 use std::collections::HashMap;
 
 #[derive(Debug, PartialEq)]
@@ -42,7 +40,6 @@ enum Step {
     Assign(VariableName, Expr),
     Conditional(Expr, Vec<Step>, Vec<(Expr, Vec<Step>)>, Vec<Step>),
     Jump(NodeName),
-    Stop,
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,9 +76,11 @@ enum BinaryOp {
 enum Term {
     Number(f32),
     Boolean(bool),
-    String(String),
+    #[allow(unused)]
+    String(String), //TODO
     Variable(VariableName),
-    Function(String, Vec<Expr>),
+    #[allow(unused)]
+    Function(String, Vec<Expr>), //TODO
 }
 
 #[derive(Debug, PartialEq)]
@@ -90,13 +89,6 @@ pub struct Node {
     extra: HashMap<String, String>,
     steps: Vec<Step>,
     visited: bool,
-}
-
-pub struct YarnEngine {
-    nodes: Vec<Node>,
-}
-
-impl YarnEngine {
 }
 
 fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
@@ -429,7 +421,6 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line, indent: u32) -
         Line::EndIf |
         Line::ElseIf(_) |
         Line::Else |
-        Line::EndIf |
         Line::Option(..) |
         Line::InlineOption(..) =>
             return Err(())
@@ -497,7 +488,7 @@ fn parse_node(tokenizer: &mut TokenIterator) -> Result<Node, ()> {
     }
 }
 
-fn parse_nodes(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
+pub fn parse_nodes(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
     let mut nodes = vec![];
     while tokenizer.peek().is_some() {
         nodes.push(parse_node(tokenizer)?);
@@ -506,7 +497,7 @@ fn parse_nodes(tokenizer: &mut TokenIterator) -> Result<Vec<Node>, ()> {
 }
 
 #[derive(Debug, PartialEq)]
-enum Token {
+pub enum Token {
     DollarSign,
     LeftAngle,
     RightAngle,
@@ -526,7 +517,7 @@ enum Token {
     StartNode,
 }
 
-struct TokenIterator<'a> {
+pub struct TokenIterator<'a> {
     input: Box<Iterator<Item=char> + 'a>,
     last_char: Option<char>,
     last_indent: u32,
@@ -534,7 +525,7 @@ struct TokenIterator<'a> {
 }
 
 impl<'a> TokenIterator<'a> {
-    fn new(input: &'a str) -> TokenIterator<'a> {
+    pub fn new(input: &'a str) -> TokenIterator<'a> {
         TokenIterator {
             input: Box::new(input.chars()),
             last_char: None,
@@ -597,7 +588,7 @@ impl<'a> Iterator for TokenIterator<'a> {
     fn next(&mut self) -> Option<Token> {
         let mut buffer = String::new();
         loop {
-            let mut ch = self.next_char()?;
+            let ch = self.next_char()?;
             if ch != ' ' {
                 self.start_of_line = false;
             }

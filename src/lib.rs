@@ -453,7 +453,6 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line, indent: u32) -
     }
 }
 
-
 fn parse_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
     let (indent, line) = parse_line(tokenizer)?;
     parse_toplevel_line(tokenizer, line, indent)

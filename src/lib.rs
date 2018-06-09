@@ -10,7 +10,29 @@ struct VariableName(String);
 #[derive(Debug, PartialEq)]
 struct Choice {
     text: String,
-    target: NodeName,
+    kind: ChoiceKind,
+}
+
+impl Choice {
+    fn external(text: String, name: NodeName) -> Choice {
+        Choice {
+            text: text,
+            kind: ChoiceKind::External(name),
+        }
+    }
+
+    fn inline(text: String, steps: Vec<Step>, condition: Option<Conditional>) -> Choice {
+        Choice {
+            text: text,
+            kind: ChoiceKind::Inline(steps, condition),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum ChoiceKind {
+    External(NodeName),
+    Inline(Vec<Step>, Option<Conditional>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -72,7 +94,7 @@ enum Comparison {
 enum Conditional {
     Truthy(Expr),
     Comparison(Expr, Comparison, Expr),
-    Tmp(String),
+    Tmp(String), //TODO
 }
 
 #[derive(Debug, PartialEq)]
@@ -225,7 +247,7 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
                     let end = remainder.find(">>").ok_or(())?;
                     (rest[..idx].trim().to_string(), Some(remainder[..end].trim().to_string()))
                 }
-                None => (rest, None),
+                None => (rest.trim().to_string(), None),
             };
             return Ok(Line::InlineOption(text, cond));
         }
@@ -256,11 +278,14 @@ enum DialogueOption {
     External(String, NodeName),
 }
 
-fn try_parse_option(tokenizer: &mut TokenIterator) -> Result<Option<DialogueOption>, ()> {
+fn try_parse_option(tokenizer: &mut TokenIterator, indent: u32) -> Result<Option<DialogueOption>, ()> {
     let t = match tokenizer.peek() {
         Some(t) => t,
         None => return Ok(None),
     };
+    if tokenizer.last_indent() < indent {
+        return Ok(None);
+    }
     if t == '[' || t == '-' {
         let (_indent, line) = parse_line(tokenizer)?;
         match line {
@@ -286,7 +311,7 @@ enum ConditionalParsePhase {
     Else,
 }
 
-fn parse_conditional(tokenizer: &mut TokenIterator) -> Result<ConditionalParts, ()> {
+fn parse_conditional(tokenizer: &mut TokenIterator, indent: u32) -> Result<ConditionalParts, ()> {
     let mut parts = ConditionalParts {
         if_steps: vec![],
         else_ifs: vec![],
@@ -313,7 +338,7 @@ fn parse_conditional(tokenizer: &mut TokenIterator) -> Result<ConditionalParts, 
                 return Ok(parts);
             }
             l => {
-                let step = parse_toplevel_line(tokenizer, l)?;
+                let step = parse_toplevel_line(tokenizer, l, indent)?;
                 let steps = match phase {
                     ConditionalParsePhase::If => &mut parts.if_steps,
                     ConditionalParsePhase::ElseIf => &mut parts.else_ifs.iter_mut().last().unwrap().1,
@@ -325,23 +350,30 @@ fn parse_conditional(tokenizer: &mut TokenIterator) -> Result<ConditionalParts, 
     }
 }
 
-fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step, ()> {
+fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line, indent: u32) -> Result<Step, ()> {
     match line {
         Line::Dialogue(s) => {
             println!("found dialogue '{}'", s);
             let mut choices = vec![];
             loop {
-                let opt = try_parse_option(tokenizer)?;
-                println!("found opt {:?}", opt);
+                let opt = try_parse_option(tokenizer, indent)?;
+                println!("found opt {:?} with indent {}", opt, indent);
                 match opt {
-                    Some(DialogueOption::Inline(_s, _condition)) => {
-                        return Err(()); //TODO
+                    Some(DialogueOption::Inline(text, condition)) => {
+                        println!("peeking after inline opt: {:?}" ,tokenizer.peek());
+                        let this_indent = tokenizer.last_indent();
+                        println!("this indent: {}", this_indent);
+                        let mut steps = vec![];
+                        loop {
+                            if tokenizer.peek().is_none() || tokenizer.last_indent() < this_indent {
+                                break;
+                            }
+                            steps.push(parse_step(tokenizer)?);
+                        }
+                        choices.push(Choice::inline(text, steps, condition.map(Conditional::Tmp)));
                     }
                     Some(DialogueOption::External(text, node)) => {
-                        choices.push(Choice {
-                            text: text,
-                            target: node,
-                        });
+                        choices.push(Choice::external(text, node));
                     }
                     None => break,
                 }
@@ -349,7 +381,7 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step
             return Ok(Step::Dialogue(s, choices));
         }
         Line::If(s) => {
-            let parts = parse_conditional(tokenizer)?;
+            let parts = parse_conditional(tokenizer, indent)?;
             return Ok(Step::Conditional(Conditional::Tmp(s),
                                         parts.if_steps,
                                         parts.else_ifs,
@@ -381,8 +413,8 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step
 
 
 fn parse_step(tokenizer: &mut TokenIterator) -> Result<Step, ()> {
-    let (_indent, line) = parse_line(tokenizer)?;
-    parse_toplevel_line(tokenizer, line)
+    let (indent, line) = parse_line(tokenizer)?;
+    parse_toplevel_line(tokenizer, line, indent)
 }
 
 fn parse_node_contents(tokenizer: &mut TokenIterator) -> Result<Vec<Step>, ()> {
@@ -490,9 +522,16 @@ impl<'a> TokenIterator<'a> {
         let mut ch;
         loop {
             ch = self.next_char();
+            if self.start_of_line && ch == Some(' ') {
+                self.last_indent += 1;
+                continue;
+            }
+            self.start_of_line = false;
             if ch != Some('\n') {
                 break;
             }
+            self.start_of_line = true;
+            self.last_indent = 0;
         }
         self.last_char = ch;
         ch
@@ -502,6 +541,8 @@ impl<'a> TokenIterator<'a> {
         let mut buffer = String::new();
         while let Some(ch) = self.next_char() {
             if ch == '\n' {
+                self.start_of_line = true;
+                self.last_indent = 0;
                 return Some(buffer);
             }
             buffer.push(ch);

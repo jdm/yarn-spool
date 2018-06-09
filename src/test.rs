@@ -86,10 +86,10 @@ fn parse_dialogue_with_option() {
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     assert_eq!(step, Step::Dialogue("this is dialogue".to_string(),
-                                    vec![Choice {
-                                        text: "this is a choice".to_string(),
-                                        target: NodeName("targetnode".to_string()),
-                                    }]));
+                                    vec![
+                                        Choice::external("this is a choice".to_string(),
+                                                         NodeName("targetnode".to_string())),
+                                    ]));
 }
 
 #[test]
@@ -98,14 +98,16 @@ fn parse_dialogue_with_two_options() {
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     assert_eq!(step, Step::Dialogue("this is dialogue".to_string(),
-                                    vec![Choice {
-                                        text: "this is a choice".to_string(),
-                                        target: NodeName("targetnode".to_string()),
-                                    },
-                                         Choice {
-                                             text: "this is another choice".to_string(),
-                                             target: NodeName("targetnode2".to_string()),
-                                         }]));
+                                    vec![
+                                        Choice::external(
+                                            "this is a choice".to_string(),
+                                            NodeName("targetnode".to_string()),
+                                        ),
+                                        Choice::external(
+                                            "this is another choice".to_string(),
+                                            NodeName("targetnode2".to_string()),
+                                        )
+                                    ]));
 }
 
 #[test]
@@ -117,10 +119,12 @@ fn parse_conditional_dialogue() {
         Conditional::Tmp("true".to_string()),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
-            vec![Choice {
-                text: "this is a choice".to_string(),
-                target: NodeName("targetnode".to_string()),
-            }])],
+            vec![
+                Choice::external(
+                    "this is a choice".to_string(),
+                    NodeName("targetnode".to_string()),
+                )
+            ])],
         vec![],
         vec![]
     );
@@ -142,17 +146,17 @@ this is other dialogue
         Conditional::Tmp("true".to_string()),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
-            vec![Choice {
-                text: "this is a choice".to_string(),
-                target: NodeName("targetnode".to_string()),
-            }])],
+            vec![Choice::external(
+                "this is a choice".to_string(),
+                NodeName("targetnode".to_string()),
+            )])],
         vec![],
         vec![Step::Dialogue(
             "this is other dialogue".to_string(),
-            vec![Choice {
-                text: "this is another choice".to_string(),
-                target: NodeName("targetnode2".to_string()),
-            }])]
+            vec![Choice::external(
+                "this is another choice".to_string(),
+                NodeName("targetnode2".to_string()),
+            )])]
     );
     assert_eq!(step, expected);
 }
@@ -177,18 +181,18 @@ whatever
         Conditional::Tmp("true".to_string()),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
-            vec![Choice {
-                text: "this is a choice".to_string(),
-                target: NodeName("targetnode".to_string()),
-            }])
+            vec![Choice::external(
+                "this is a choice".to_string(),
+                NodeName("targetnode".to_string()),
+            )])
         ],
         vec![(Conditional::Tmp("false".to_string()),
               vec![Step::Dialogue(
                   "this is other dialogue".to_string(),
-                  vec![Choice {
-                      text: "this is another choice".to_string(),
-                      target: NodeName("targetnode2".to_string()),
-                  }])
+                  vec![Choice::external(
+                      "this is another choice".to_string(),
+                      NodeName("targetnode2".to_string()),
+                  )])
               ]),
              (Conditional::Tmp("true".to_string()),
               vec![Step::Dialogue(
@@ -198,10 +202,10 @@ whatever
         ],
         vec![Step::Dialogue(
             "whatever".to_string(),
-            vec![Choice {
-                text: "look a choice".to_string(),
-                target: NodeName("targetnode3".to_string()),
-            }])
+            vec![Choice::external(
+                "look a choice".to_string(),
+                NodeName("targetnode3".to_string()),
+            )])
         ]
     );
     assert_eq!(step, expected);
@@ -310,14 +314,14 @@ dialogue
             extra: extra2,
             steps: vec![
                 Step::Dialogue("dialogue".to_string(), vec![
-                    Choice {
-                        text: "option".to_string(),
-                        target: NodeName("whee hello".to_string()),
-                    },
-                    Choice {
-                        text: "option2".to_string(),
-                        target: NodeName("title!".to_string()),
-                    },
+                    Choice::external(
+                        "option".to_string(),
+                        NodeName("whee hello".to_string()),
+                    ),
+                    Choice::external(
+                        "option2".to_string(),
+                        NodeName("title!".to_string()),
+                    ),
                 ]),
             ],
             visited: false,
@@ -379,4 +383,34 @@ fn parse_inline_option_with_condition() {
     let (_indent, line) = parse_line(&mut t).unwrap();
     assert_eq!(line, Line::InlineOption("This is some text".to_string(),
                                         Some("if $money >= 5".to_string())));
+}
+
+#[test]
+fn parse_inline_option_with_condition2() {
+    let input = r#"This is dialogue
+-> This is some text << if $money >= 5 >>
+  Some inline dialogue
+  Some more inline dialogue
+-> Another text
+  Some inline dialogue
+"#;
+    let mut t = TokenIterator::new(input);
+    let step = parse_step(&mut t).unwrap();
+    assert_eq!(step,Step::Dialogue("This is dialogue".to_string(),
+                                   vec![
+                                       Choice::inline("This is some text".to_string(),
+                                                      vec![
+                                                          Step::Dialogue("Some inline dialogue".to_string(),
+                                                                         vec![]),
+                                                          Step::Dialogue("Some more inline dialogue".to_string(),
+                                                                         vec![]),
+                                                      ],
+                                                      Some(Conditional::Tmp("if $money >= 5".to_string()))),
+                                       Choice::inline("Another text".to_string(),
+                                                      vec![
+                                                          Step::Dialogue("Some inline dialogue".to_string(),
+                                                                         vec![]),
+                                                      ],
+                                                      None),
+                                   ]));
 }

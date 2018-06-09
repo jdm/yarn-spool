@@ -3,8 +3,8 @@ use std::collections::HashMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(crate) struct NodeName(pub String);
-#[derive(Debug, PartialEq)]
-pub(crate) struct VariableName(pub String);
+#[derive(Debug, PartialEq, Eq, Hash)]
+pub struct VariableName(pub String);
 
 #[derive(Debug, PartialEq)]
 pub(crate) struct Choice {
@@ -90,15 +90,45 @@ pub(crate) struct Node {
     pub visited: bool,
 }
 
+pub enum Value {
+    String(String),
+    Number(f32),
+    Boolean(bool),
+}
+
+pub struct Function {
+    _num_args: usize,
+    callback: Box<FunctionCallback>,
+}
+
+pub type FunctionCallback = Fn(Vec<Value>, &YarnEngine) -> Result<Value, ()>;
+
 pub struct YarnEngine {
     nodes: HashMap<NodeName, Node>,
+    handler: Box<YarnHandler>,
+    variables: HashMap<VariableName, Value>,
+    functions: HashMap<String, Function>,
 }
 
 impl YarnEngine {
-    pub fn new() -> YarnEngine {
-        YarnEngine {
+    pub fn new(handler: Box<YarnHandler>) -> YarnEngine {
+        let mut engine = YarnEngine {
             nodes: HashMap::new(),
-        }
+            variables: HashMap::new(),
+            functions: HashMap::new(),
+            handler,
+        };
+        engine.register_function("visited".to_string(), 1, Box::new(|args, engine| {
+            match args[0] {
+                Value::String(ref s) => {
+                    engine.nodes
+                        .get(&NodeName(s.to_string()))
+                        .map(|node| Value::Boolean(node.visited)).ok_or(())
+                }
+                _ => return Err(())
+            }
+        }));
+        engine
     }
 
     pub fn load_from_string(&mut self, s: &str) -> Result<(), ()> {
@@ -108,4 +138,30 @@ impl YarnEngine {
         }
         Ok(())
     }
+
+    pub fn register_function(
+        &mut self,
+        name: String,
+        num_args: usize,
+        callback: Box<FunctionCallback>,
+    ) {
+        self.functions.insert(name, Function {
+            _num_args: num_args,
+            callback,
+        });
+    }
+
+    pub fn set_variable(
+        &mut self,
+        name: VariableName,
+        value: Value
+    ) {
+        self.variables.insert(name, value);
+    }
+}
+
+pub trait YarnHandler {
+    fn say(&mut self, text: String);
+    fn choose(&mut self, choices: Vec<String>);
+    fn command(&mut self, action: String) -> Result<(), ()>;
 }

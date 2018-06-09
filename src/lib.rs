@@ -76,8 +76,7 @@ enum BinaryOp {
 enum Term {
     Number(f32),
     Boolean(bool),
-    #[allow(unused)]
-    String(String), //TODO
+    String(String),
     Variable(VariableName),
     #[allow(unused)]
     Function(String, Vec<Expr>), //TODO
@@ -108,6 +107,9 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
         }
         Token::Word(ref w) if w == "false" => {
             Expr::Term(Term::Boolean(false))
+        }
+        Token::Quote => {
+            Expr::Term(Term::String(parse_string_until(tokenizer, '"')?))
         }
         Token::Minus => {
             let expr = parse_expr(tokenizer)?;
@@ -507,6 +509,7 @@ pub enum Token {
     Minus,
     Star,
     Slash,
+    Quote,
     ExclamationMark,
     LeftBracket,
     RightBracket,
@@ -605,6 +608,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                 '*' => return Some(Token::Star),
                 '/' => return Some(Token::Slash),
                 '!' => return Some(Token::ExclamationMark),
+                '"' => return Some(Token::Quote),
                 '[' => return Some(Token::LeftBracket),
                 ']' => return Some(Token::RightBracket),
                 '0'...'9' => {

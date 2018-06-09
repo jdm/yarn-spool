@@ -340,6 +340,13 @@ fn parse_number_expression() {
 }
 
 #[test]
+fn parse_string_expression() {
+    let input = "\"hi there\"";
+    let mut t = TokenIterator::new(input);
+    assert_eq!(parse_expr(&mut t).unwrap(), Expr::Term(Term::String("hi there".to_string())));
+}
+
+#[test]
 fn parse_negative_number_expression() {
     let input = "-5.4";
     let mut t = TokenIterator::new(input);

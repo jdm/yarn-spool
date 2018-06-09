@@ -1,6 +1,6 @@
 use std::collections::HashMap;
-use super::{TokenIterator, Token, Step, StepPhase, Choice, NodeName, Conditional, Node};
-use super::{Expr, Term, UnaryOp, BinaryOp, Line};
+use super::{TokenIterator, Token, Step, Choice, NodeName, Node};
+use super::{Expr, Term, UnaryOp, BinaryOp, Line, VariableName};
 use super::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
 
 #[test]
@@ -116,7 +116,7 @@ fn parse_conditional_dialogue() {
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     let expected = Step::Conditional(
-        Conditional::Tmp("true".to_string()),
+        Expr::Term(Term::Boolean(true)),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
             vec![
@@ -143,7 +143,7 @@ this is other dialogue
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     let expected = Step::Conditional(
-        Conditional::Tmp("true".to_string()),
+        Expr::Term(Term::Boolean(true)),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
             vec![Choice::external(
@@ -178,7 +178,7 @@ whatever
     let mut t = TokenIterator::new(input);
     let step = parse_step(&mut t).unwrap();
     let expected = Step::Conditional(
-        Conditional::Tmp("true".to_string()),
+        Expr::Term(Term::Boolean(true)),
         vec![Step::Dialogue(
             "this is dialogue".to_string(),
             vec![Choice::external(
@@ -186,7 +186,7 @@ whatever
                 NodeName("targetnode".to_string()),
             )])
         ],
-        vec![(Conditional::Tmp("false".to_string()),
+        vec![(Expr::Term(Term::Boolean(false)),
               vec![Step::Dialogue(
                   "this is other dialogue".to_string(),
                   vec![Choice::external(
@@ -194,7 +194,7 @@ whatever
                       NodeName("targetnode2".to_string()),
                   )])
               ]),
-             (Conditional::Tmp("true".to_string()),
+             (Expr::Term(Term::Boolean(true)),
               vec![Step::Dialogue(
                   "third dialogue!".to_string(),
                   vec![])
@@ -382,7 +382,7 @@ fn parse_inline_option_with_condition() {
     let mut t = TokenIterator::new(input);
     let (_indent, line) = parse_line(&mut t).unwrap();
     assert_eq!(line, Line::InlineOption("This is some text".to_string(),
-                                        Some("if $money >= 5".to_string())));
+                                        Some("$money >= 5".to_string())));
 }
 
 #[test]
@@ -405,7 +405,9 @@ fn parse_inline_option_with_condition2() {
                                                           Step::Dialogue("Some more inline dialogue".to_string(),
                                                                          vec![]),
                                                       ],
-                                                      Some(Conditional::Tmp("if $money >= 5".to_string()))),
+                                                      Some(Expr::Binary(BinaryOp::GreaterThanEqual,
+                                                                        Box::new(Expr::Term(Term::Variable(VariableName("money".to_string())))),
+                                                                        Box::new(Expr::Term(Term::Number(5.0)))))),
                                        Choice::inline("Another text".to_string(),
                                                       vec![
                                                           Step::Dialogue("Some inline dialogue".to_string(),

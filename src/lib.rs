@@ -21,7 +21,7 @@ impl Choice {
         }
     }
 
-    fn inline(text: String, steps: Vec<Step>, condition: Option<Conditional>) -> Choice {
+    fn inline(text: String, steps: Vec<Step>, condition: Option<Expr>) -> Choice {
         Choice {
             text: text,
             kind: ChoiceKind::Inline(steps, condition),
@@ -32,7 +32,7 @@ impl Choice {
 #[derive(Debug, PartialEq)]
 enum ChoiceKind {
     External(NodeName),
-    Inline(Vec<Step>, Option<Conditional>),
+    Inline(Vec<Step>, Option<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -40,7 +40,7 @@ enum Step {
     Dialogue(String, Vec<Choice>),
     Command(String),
     Assign(VariableName, Expr),
-    Conditional(Conditional, Vec<Step>, Vec<(Conditional, Vec<Step>)>, Vec<Step>),
+    Conditional(Expr, Vec<Step>, Vec<(Expr, Vec<Step>)>, Vec<Step>),
     Jump(NodeName),
     Stop,
 }
@@ -69,6 +69,10 @@ enum BinaryOp {
     Divide,
     Equals,
     NotEquals,
+    GreaterThan,
+    LessThan,
+    GreaterThanEqual,
+    LessThanEqual,
 }
 
 #[derive(Debug, PartialEq)]
@@ -78,23 +82,6 @@ enum Term {
     String(String),
     Variable(VariableName),
     Function(String, Vec<Expr>),
-}
-
-#[derive(Debug, PartialEq)]
-enum Comparison {
-    Equal,
-    NotEqual,
-    GreaterThan,
-    LessThan,
-    GreaterEqual,
-    LessEqual,
-}
-
-#[derive(Debug, PartialEq)]
-enum Conditional {
-    Truthy(Expr),
-    Comparison(Expr, Comparison, Expr),
-    Tmp(String), //TODO
 }
 
 #[derive(Debug, PartialEq)]
@@ -119,6 +106,16 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
         Token::ExclamationMark => {
             let expr = parse_expr(tokenizer)?;
             Expr::Unary(UnaryOp::Not, Box::new(expr))
+        }
+        Token::Word(ref w) if w == "not" => {
+            let expr = parse_expr(tokenizer)?;
+            Expr::Unary(UnaryOp::Not, Box::new(expr))
+        }
+        Token::Word(ref w) if w == "true" => {
+            Expr::Term(Term::Boolean(true))
+        }
+        Token::Word(ref w) if w == "false" => {
+            Expr::Term(Term::Boolean(false))
         }
         Token::Minus => {
             let expr = parse_expr(tokenizer)?;
@@ -158,12 +155,32 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
             }
             BinaryOp::Equals
         }
+        Token::LeftAngle => {
+            if tokenizer.peek() == Some('=') {
+                let _ = tokenizer.next();
+                BinaryOp::LessThanEqual
+            } else {
+                BinaryOp::LessThan
+            }
+        }
+        Token::RightAngle => {
+            if tokenizer.peek() == Some('=') {
+                let _ = tokenizer.next();
+                BinaryOp::GreaterThanEqual
+            } else {
+                BinaryOp::GreaterThan
+            }
+        }
         Token::Word(word) => {
             match &*word {
                 "and" => BinaryOp::And,
                 "or" => BinaryOp::Or,
-                "eq" => BinaryOp::Equals,
+                "eq" | "is" => BinaryOp::Equals,
                 "neq" => BinaryOp::NotEquals,
+                "le" => BinaryOp::LessThan,
+                "leq" => BinaryOp::LessThanEqual,
+                "gt" => BinaryOp::GreaterThan,
+                "geq" => BinaryOp::GreaterThanEqual,
                 _ => return Err(()),
             }
         }
@@ -243,9 +260,12 @@ fn do_parse_line(token: Token, tokenizer: &mut TokenIterator) -> Result<Line, ()
             let rest = tokenizer.remainder_of_line().ok_or(())?;
             let (text, cond) = match rest.find("<<") {
                 Some(idx) => {
-                    let remainder = &rest[idx + 2..];
+                    let remainder = &rest[idx + 2..].trim();
+                    if !remainder.starts_with("if ") {
+                        return Err(());
+                    }
                     let end = remainder.find(">>").ok_or(())?;
-                    (rest[..idx].trim().to_string(), Some(remainder[..end].trim().to_string()))
+                    (rest[..idx].trim().to_string(), Some(remainder[3..end].trim().to_string()))
                 }
                 None => (rest.trim().to_string(), None),
             };
@@ -264,12 +284,6 @@ fn parse_string_until(tokenizer: &mut TokenIterator, until: char) -> Result<Stri
         }
         buffer.push(ch);
     }
-}
-
-#[derive(Copy, Clone, PartialEq)]
-enum StepPhase {
-    Toplevel,
-    Conditional,
 }
 
 #[derive(Debug)]
@@ -300,7 +314,7 @@ fn try_parse_option(tokenizer: &mut TokenIterator, indent: u32) -> Result<Option
 
 struct ConditionalParts {
     if_steps: Vec<Step>,
-    else_ifs: Vec<(Conditional, Vec<Step>)>,
+    else_ifs: Vec<(Expr, Vec<Step>)>,
     else_steps: Vec<Step>,
 }
 
@@ -326,7 +340,9 @@ fn parse_conditional(tokenizer: &mut TokenIterator, indent: u32) -> Result<Condi
                     return Err(());
                 }
                 phase = ConditionalParsePhase::ElseIf;
-                parts.else_ifs.push((Conditional::Tmp(s), vec![]));
+                let mut expr_tokenizer = TokenIterator::new(&s);
+                let expr = parse_expr(&mut expr_tokenizer)?;
+                parts.else_ifs.push((expr, vec![]));
             }
             Line::Else => {
                 if phase == ConditionalParsePhase::Else {
@@ -370,7 +386,14 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line, indent: u32) -
                             }
                             steps.push(parse_step(tokenizer)?);
                         }
-                        choices.push(Choice::inline(text, steps, condition.map(Conditional::Tmp)));
+                        let condition = match condition {
+                            Some(c) => {
+                                let mut expr_tokenizer = TokenIterator::new(&c);
+                                Some(parse_expr(&mut expr_tokenizer)?)
+                            }
+                            None => None,
+                        };
+                        choices.push(Choice::inline(text, steps, condition));
                     }
                     Some(DialogueOption::External(text, node)) => {
                         choices.push(Choice::external(text, node));
@@ -381,8 +404,10 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line, indent: u32) -
             return Ok(Step::Dialogue(s, choices));
         }
         Line::If(s) => {
+            let mut expr_tokenizer = TokenIterator::new(&s);
+            let expr = parse_expr(&mut expr_tokenizer)?;
             let parts = parse_conditional(tokenizer, indent)?;
-            return Ok(Step::Conditional(Conditional::Tmp(s),
+            return Ok(Step::Conditional(expr,
                                         parts.if_steps,
                                         parts.else_ifs,
                                         parts.else_steps));

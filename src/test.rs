@@ -374,3 +374,11 @@ fn parse_parentheses() {
                               Box::new(Expr::Term(Term::Number(8.0))))));
     assert_eq!(parse_expr(&mut t).unwrap(), expected);
 }
+
+#[test]
+fn parse_jump() {
+    let input = "[[SomeNode.Walk]]";
+    let mut t = TokenIterator::new(input);
+    let step = parse_step(&mut t).unwrap();
+    assert_eq!(step, Step::Jump(NodeName("SomeNode.Walk".to_string())));
+}

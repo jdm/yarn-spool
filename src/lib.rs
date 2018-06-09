@@ -359,6 +359,9 @@ fn parse_toplevel_line(tokenizer: &mut TokenIterator, line: Line) -> Result<Step
             }
             return Ok(Step::Command(s));
         }
+        Line::Option(None, name) => {
+            return Ok(Step::Jump(name));
+        }
         Line::EndIf |
         Line::ElseIf(_) |
         Line::Else |

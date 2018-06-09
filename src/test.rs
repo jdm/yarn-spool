@@ -347,6 +347,33 @@ fn parse_string_expression() {
 }
 
 #[test]
+fn parse_function_expression() {
+    let input = "visited(\"someNode\")";
+    let mut t = TokenIterator::new(input);
+    assert_eq!(parse_expr(&mut t).unwrap(),
+               Expr::Term(Term::Function("visited".to_string(),
+                                         vec![Expr::Term(Term::String("someNode".to_string()))])));
+}
+
+#[test]
+fn parse_function_expression_no_args() {
+    let input = "visited()";
+    let mut t = TokenIterator::new(input);
+    assert_eq!(parse_expr(&mut t).unwrap(),
+               Expr::Term(Term::Function("visited".to_string(), vec![])));
+}
+
+#[test]
+fn parse_function_expression_two_args() {
+    let input = "visited(\"someNode\", 5.4)";
+    let mut t = TokenIterator::new(input);
+    assert_eq!(parse_expr(&mut t).unwrap(),
+               Expr::Term(Term::Function("visited".to_string(),
+                                         vec![Expr::Term(Term::String("someNode".to_string())),
+                                              Expr::Term(Term::Number(5.4))])));
+}
+
+#[test]
 fn parse_negative_number_expression() {
     let input = "-5.4";
     let mut t = TokenIterator::new(input);

@@ -78,8 +78,7 @@ enum Term {
     Boolean(bool),
     String(String),
     Variable(VariableName),
-    #[allow(unused)]
-    Function(String, Vec<Expr>), //TODO
+    Function(String, Vec<Expr>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -108,6 +107,31 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
         Token::Word(ref w) if w == "false" => {
             Expr::Term(Term::Boolean(false))
         }
+        Token::Word(ref w) => {
+            println!("function? {}", w);
+            match tokenizer.next().ok_or(())? {
+                Token::LeftParenthesis => (),
+                _ => return Err(()),
+            }
+            let mut args = vec![];
+            loop {
+                if !args.is_empty() {
+                    match tokenizer.peek() {
+                        Some(',') => assert_eq!(tokenizer.next(), Some(Token::Comma)),
+                        Some(')') => (),
+                        _ => return Err(()),
+                    }
+                }
+                if tokenizer.peek() == Some(')') {
+                    assert_eq!(tokenizer.next(), Some(Token::RightParenthesis));
+                    break;
+                }
+                args.push(parse_expr(tokenizer)?);
+                println!("arg: {:?}", args.last().unwrap());
+            }
+            println!("function with {} args", args.len());
+            Expr::Term(Term::Function(w.to_string(), args))
+        }
         Token::Quote => {
             Expr::Term(Term::String(parse_string_until(tokenizer, '"')?))
         }
@@ -128,7 +152,7 @@ fn parse_expr(tokenizer: &mut TokenIterator) -> Result<Expr, ()> {
         _ => return Err(()),
     };
     match tokenizer.peek() {
-        Some(')') | None => return Ok(left),
+        Some(')') | Some(',') | None => return Ok(left),
         _ => (),
     }
 
@@ -510,6 +534,7 @@ pub enum Token {
     Star,
     Slash,
     Quote,
+    Comma,
     ExclamationMark,
     LeftBracket,
     RightBracket,
@@ -609,6 +634,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                 '/' => return Some(Token::Slash),
                 '!' => return Some(Token::ExclamationMark),
                 '"' => return Some(Token::Quote),
+                ',' => return Some(Token::Comma),
                 '[' => return Some(Token::LeftBracket),
                 ']' => return Some(Token::RightBracket),
                 '0'...'9' => {
@@ -647,7 +673,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                             None if buffer.is_empty() => return None,
                             None => return Some(Token::Word(buffer)),
                         };
-                        if ch != ' ' && ch != '\n' {
+                        if ![' ', '\n', '('].contains(&ch) {
                             buffer.push(ch);
                         } else {
                             self.push_back(ch);

@@ -1,5 +1,8 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 use engine::{Expr, Term, UnaryOp, BinaryOp, VariableName, NodeName, Node, Choice, Step};
+use engine::{YarnEngine, YarnHandler};
 use parse::{TokenIterator, Token, Line};
 use parse::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
 
@@ -449,4 +452,98 @@ fn parse_inline_option_with_condition2() {
                                                       ],
                                                       None),
                                    ]));
+}
+
+#[derive(PartialEq, Debug)]
+enum Event {
+    Say(String),
+    Choose(String, Vec<String>),
+    Command(String),
+    End,
+}
+
+#[derive(Default)]
+struct TestHandler {
+    events: Rc<RefCell<Vec<Event>>>,
+}
+
+impl YarnHandler for TestHandler {
+    fn say(&mut self, text: String) {
+        self.events.borrow_mut().push(Event::Say(text));
+    }
+    fn choose(&mut self, text: String, choices: Vec<String>) {
+        self.events.borrow_mut().push(Event::Choose(text, choices));
+    }
+    fn command(&mut self, action: String) -> Result<(), ()> {
+        self.events.borrow_mut().push(Event::Command(action));
+        Ok(())
+    }
+    fn end_conversation(&mut self) {
+        self.events.borrow_mut().push(Event::End);
+    }
+}
+
+#[test]
+fn test_execution() {
+    let nodes = r#"
+title: 1
+---
+text1
+text2
+===
+"#;
+    let handler = Box::new(TestHandler::default());
+    let events = handler.events.clone();
+    let mut engine = YarnEngine::new(handler);
+    engine.load_from_string(&nodes).unwrap();
+    engine.activate(NodeName("1".to_string()));
+    assert_eq!(&*events.borrow(), &[Event::Say("text1".to_string())]);
+    engine.proceed();
+    assert_eq!(&*events.borrow(), &[Event::Say("text1".to_string()),
+                                    Event::Say("text2".to_string())]);
+    engine.proceed();
+    assert_eq!(&*events.borrow(), &[Event::Say("text1".to_string()),
+                                    Event::Say("text2".to_string()),
+                                    Event::End]);
+}
+
+#[test]
+fn test_execution_choice() {
+    let nodes = r#"
+title: 1
+---
+some text
+[[whee|3]]
+[[whee2|2]]
+===
+
+title: 2
+---
+[[1]]
+===
+
+title: 3
+---
+that's all
+===
+"#;
+    let handler = Box::new(TestHandler::default());
+    let events = handler.events.clone();
+    let mut engine = YarnEngine::new(handler);
+    engine.load_from_string(&nodes).unwrap();
+    engine.activate(NodeName("1".to_string()));
+    assert_eq!(&*events.borrow(), &[Event::Choose("some text".to_string(),
+                                                  vec!["whee".to_string(),
+                                                       "whee2".to_string()])]);
+    events.borrow_mut().clear();
+    engine.choose(1);
+    assert_eq!(&*events.borrow(), &[Event::Choose("some text".to_string(),
+                                                  vec!["whee".to_string(),
+                                                       "whee2".to_string()])]);
+    events.borrow_mut().clear();
+    engine.choose(0);
+    assert_eq!(&*events.borrow(), &[Event::Say("that's all".to_string())]);
+    events.borrow_mut().clear();
+    engine.proceed();
+    assert_eq!(&*events.borrow(), &[Event::End]);
 }

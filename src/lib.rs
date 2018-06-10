@@ -1,4 +1,4 @@
-pub use self::engine::{YarnEngine, YarnHandler, Function, Value};
+pub use self::engine::{YarnEngine, YarnHandler, FunctionCallback, Value};
 
 mod engine;
 pub(crate) mod parse;

@@ -10,7 +10,7 @@ pub struct NodeName(pub String);
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub struct VariableName(pub String);
 
-pub struct Variables(HashMap<VariableName, Value>);
+struct Variables(HashMap<VariableName, Value>);
 impl Variables {
     fn set(&mut self, name: VariableName, value: Value) {
         self.0.insert(name, value);
@@ -147,10 +147,14 @@ enum ExecutionStatus {
     Halt,
 }
 
+/// A primitive value .
 #[derive(Clone)]
 pub enum Value {
+    /// A string value.
     String(String),
+    /// A floating point value.
     Number(f32),
+    /// A boolean value.
     Boolean(bool),
     //TODO: null
 }
@@ -207,7 +211,8 @@ impl Div for Value {
 }
 
 impl Value {
-    fn as_string(&self) -> String {
+    /// The contained value represented as a string.
+    pub fn as_string(&self) -> String {
         match *self {
             Value::Boolean(b) => b.to_string(),
             Value::String(ref s) => (*s).clone(),
@@ -215,6 +220,8 @@ impl Value {
         }
     }
 
+    /// The contained value represented as a boolean.
+    /// If not already a boolean, true if a non-empty string or non-zero number, false otherwise.
     fn as_bool(&self) -> bool {
         match *self {
             Value::Boolean(b) => b,
@@ -223,6 +230,8 @@ impl Value {
         }
     }
 
+    /// The contained value represented as a floating point number.
+    /// If not already a number, 0 if a string, 0 or 1 if a boolean.
     fn as_num(&self) -> f32 {
         match *self {
             Value::Boolean(b) => b as isize as f32,
@@ -232,13 +241,15 @@ impl Value {
     }
 }
 
-pub struct Function {
+struct Function {
     num_args: usize,
     callback: Box<FunctionCallback>,
 }
 
+/// A closure that will be invoked when a particular function is called in a Yarn expression.
 pub type FunctionCallback = Fn(Vec<Value>, &Nodes) -> Result<Value, ()>;
 
+/// The engine that stores all conversation-related state.
 pub struct YarnEngine {
     handler: Box<YarnHandler>,
     state: NodeState,
@@ -345,9 +356,10 @@ impl EngineState {
     }
 }
 
+/// A collection of Yarn nodes.
 pub struct Nodes(HashMap<NodeName, Node>);
 
-pub struct NodeState {
+struct NodeState {
     nodes: Nodes,
     conversation: Option<Conversation>,
 }
@@ -356,6 +368,7 @@ impl NodeState {
     fn take_conversation(&mut self) -> Conversation {
         self.conversation.take().expect("missing conversation")
     }
+
     fn get_current_step(&self, conversation: &Conversation) -> (&Vec<Step>, usize) {
         let mut steps = {
             let current = self.nodes.0.get(&conversation.node).expect("missing node");
@@ -396,6 +409,7 @@ impl NodeState {
 }
 
 impl YarnEngine {
+    /// Create a new YarnEngine instance associated with the given handler.
     pub fn new(handler: Box<YarnHandler>) -> YarnEngine {
         let mut engine = YarnEngine {
             state: NodeState {
@@ -408,6 +422,8 @@ impl YarnEngine {
             },
             handler,
         };
+
+        // Define built-in functions.
         engine.register_function("visited".to_string(), 1, Box::new(|args, state| {
             match args[0] {
                 Value::String(ref s) => {
@@ -419,9 +435,12 @@ impl YarnEngine {
                 _ => return Err(())
             }
         }));
+
         engine
     }
 
+    /// Parse the provided string as a series of Yarn nodes, appending the results to
+    /// the internal node storage. Returns Ok if parsing succeeded, Err otherwise.
     pub fn load_from_string(&mut self, s: &str) -> Result<(), ()> {
         let nodes = parse::parse_nodes_from_string(s)?;
         for node in nodes {
@@ -430,6 +449,7 @@ impl YarnEngine {
         Ok(())
     }
 
+    /// Register a native function for use in Yarn expressions.
     pub fn register_function(
         &mut self,
         name: String,
@@ -442,6 +462,8 @@ impl YarnEngine {
         });
     }
 
+    /// Set a given variable to the provided value. Any Yarn expressions evaluated
+    /// after this call will observe the new value when using the variable.
     pub fn set_variable(
         &mut self,
         name: VariableName,
@@ -450,12 +472,15 @@ impl YarnEngine {
         self.engine_state.variables.set(name, value);
     }
 
+    /// Begin evaluating the provided Yarn node.
     pub fn activate(&mut self, node: NodeName) {
         //TODO: mark visited
         self.state.conversation = Some(Conversation::new(node));
         self.proceed();
     }
 
+    /// Make a choice between a series of options for the current Yarn node's active step.
+    /// Execution will resume immediately based on the choice provided.
     pub fn choose(&mut self, choice: usize) {
         let conversation = {
             let mut conversation = self.state.take_conversation();
@@ -478,6 +503,7 @@ impl YarnEngine {
         self.proceed();
     }
 
+    /// Resume execution of the current Yarn node.
     pub fn proceed(&mut self) {
         while self.proceed_one_step() == ExecutionStatus::Continue {
         }
@@ -558,9 +584,20 @@ impl YarnEngine {
     }
 }
 
+/// A handler for Yarn actions that require integration with the embedder.
+/// Invoked synchronously during Yarn execution when matching steps are
+/// evaluated.
 pub trait YarnHandler {
+    /// Present a line of dialogue without any choices. Execution will not
+    /// resume until `YarnEngine::proceed` is invoked.
     fn say(&mut self, text: String);
+    /// Present a line of dialogue with subsequent choices. Execution will not
+    /// resume until `YarnEngine::choose` is invoked.
     fn choose(&mut self, text: String, choices: Vec<String>);
+    /// Instruct the embedder to perform some kind of action. The given action
+    /// string is passed unmodified from the node source.
     fn command(&mut self, action: String) -> Result<(), ()>;
+    /// End the current conversation. Execution will not resume until a new
+    /// node is made active with `YarnEngine::activate`.
     fn end_conversation(&mut self);
 }

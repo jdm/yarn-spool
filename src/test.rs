@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use engine::{Expr, Term, UnaryOp, BinaryOp, VariableName, NodeName, Node, Choice, Step};
-use engine::{YarnEngine, YarnHandler};
+use engine::{YarnEngine, YarnHandler, Value};
 use parse::{TokenIterator, Token, Line};
 use parse::{parse_step, parse_node_contents, parse_node, parse_nodes, parse_expr, parse_line};
 
@@ -543,6 +543,38 @@ that's all
     events.borrow_mut().clear();
     engine.choose(0);
     assert_eq!(&*events.borrow(), &[Event::Say("that's all".to_string())]);
+    events.borrow_mut().clear();
+    engine.proceed();
+    assert_eq!(&*events.borrow(), &[Event::End]);
+}
+
+#[test]
+fn test_execution_variable() {
+    let nodes = r#"
+title: 1
+---
+<<if $foo == 5>>
+some text
+<<else>>
+other text
+<<endif>>
+===
+"#;
+    let handler = Box::new(TestHandler::default());
+    let events = handler.events.clone();
+    let mut engine = YarnEngine::new(handler);
+    engine.set_variable(VariableName("foo".to_string()), Value::Number(5.0));
+    engine.load_from_string(&nodes).unwrap();
+    engine.activate(NodeName("1".to_string()));
+    assert_eq!(&*events.borrow(), &[Event::Say("some text".to_string())]);
+    events.borrow_mut().clear();
+    engine.proceed();
+    assert_eq!(&*events.borrow(), &[Event::End]);
+    events.borrow_mut().clear();
+
+    engine.set_variable(VariableName("foo".to_string()), Value::Number(6.0));
+    engine.activate(NodeName("1".to_string()));
+    assert_eq!(&*events.borrow(), &[Event::Say("other text".to_string())]);
     events.borrow_mut().clear();
     engine.proceed();
     assert_eq!(&*events.borrow(), &[Event::End]);

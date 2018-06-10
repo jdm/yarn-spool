@@ -1,5 +1,7 @@
 use parse;
+use std::cmp::PartialEq;
 use std::collections::HashMap;
+use std::ops::{Add, Sub, Mul, Div};
 
 //TODO: dialogue options inside conditionals
 
@@ -145,13 +147,74 @@ enum ExecutionStatus {
     Halt,
 }
 
+#[derive(Clone)]
 pub enum Value {
     String(String),
     Number(f32),
     Boolean(bool),
+    //TODO: null
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Value) -> bool {
+        match (self, other) {
+            (&Value::String(ref s1), ref v) => s1 == &v.as_string(),
+            (ref v, &Value::String(ref s2)) => s2 == &v.as_string(),
+            (&Value::Number(f1), ref v) => f1 == v.as_num(),
+            (ref v, &Value::Number(f2)) => f2 == v.as_num(),
+            (&Value::Boolean(b1), &Value::Boolean(b2)) => b1 == b2,
+        }
+    }
+}
+
+impl Add for Value {
+    type Output = Value;
+    fn add(self, other: Value) -> Value {
+        match (self, other) {
+            (Value::String(s1), v) =>
+                Value::String(format!("{}{}", s1, v.as_string())),
+            (v, Value::String(s2)) =>
+                Value::String(format!("{}{}", v.as_string(), s2)),
+            (Value::Number(f1), v) =>
+                Value::Number(f1 + v.as_num()),
+            (v, Value::Number(f2)) =>
+                Value::Number(v.as_num() + f2),
+            (v1, v2) =>
+                Value::Number(v1.as_num() + v2.as_num()),
+        }
+    }
+}
+
+impl Sub for Value {
+    type Output = Value;
+    fn sub(self, other: Value) -> Value {
+        Value::Number(self.as_num() - other.as_num())
+    }
+}
+
+impl Mul for Value {
+    type Output = Value;
+    fn mul(self, other: Value) -> Value {
+        Value::Number(self.as_num() * other.as_num())
+    }
+}
+
+impl Div for Value {
+    type Output = Value;
+    fn div(self, other: Value) -> Value {
+        Value::Number(self.as_num() / other.as_num())
+    }
 }
 
 impl Value {
+    fn as_string(&self) -> String {
+        match *self {
+            Value::Boolean(b) => b.to_string(),
+            Value::String(ref s) => (*s).clone(),
+            Value::Number(f) => f.to_string(),
+        }
+    }
+
     fn as_bool(&self) -> bool {
         match *self {
             Value::Boolean(b) => b,
@@ -159,14 +222,22 @@ impl Value {
             Value::Number(f) => f != 0.0,
         }
     }
+
+    fn as_num(&self) -> f32 {
+        match *self {
+            Value::Boolean(b) => b as isize as f32,
+            Value::String(ref _s) => 0.,
+            Value::Number(f) => f,
+        }
+    }
 }
 
 pub struct Function {
-    _num_args: usize,
+    num_args: usize,
     callback: Box<FunctionCallback>,
 }
 
-pub type FunctionCallback = Fn(Vec<Value>, &YarnEngine) -> Result<Value, ()>;
+pub type FunctionCallback = Fn(Vec<Value>, &Nodes) -> Result<Value, ()>;
 
 pub struct YarnEngine {
     handler: Box<YarnHandler>,
@@ -180,21 +251,114 @@ struct EngineState {
 }
 
 impl EngineState {
-    fn evaluate(&self, _expr: &Expr) -> Result<Value, ()> {
-        Err(()) //TODO
+    fn evaluate(&self, expr: &Expr, state: &Nodes) -> Result<Value, ()> {
+        match expr {
+            Expr::Parentheses(expr) => self.evaluate(expr, state),
+            Expr::Term(Term::Number(f)) => Ok(Value::Number(*f)),
+            Expr::Term(Term::Boolean(b)) => Ok(Value::Boolean(*b)),
+            Expr::Term(Term::String(ref s)) => Ok(Value::String((*s).clone())),
+            Expr::Term(Term::Variable(ref n)) => {
+                self.variables.0.get(n).cloned().ok_or(())
+            }
+            Expr::Term(Term::Function(ref name, ref args)) => {
+                let mut eval_args = vec![];
+                for arg in args {
+                    let v = self.evaluate(arg, state)?;
+                    eval_args.push(v);
+                }
+                let f = self.functions.get(name).ok_or(())?;
+                if f.num_args != args.len() {
+                    return Err(());
+                }
+                (f.callback)(eval_args, state)
+            }
+
+            Expr::Unary(UnaryOp::Not, expr) =>
+                self.evaluate(expr, state).map(|v| Value::Boolean(!v.as_bool())),
+            Expr::Unary(UnaryOp::Negate, expr) =>
+                self.evaluate(expr, state).map(|v| Value::Number(-v.as_num())),
+
+            Expr::Binary(BinaryOp::And, left, right) => {
+                let left = self.evaluate(left, state)?.as_bool();
+                let right = self.evaluate(right, state)?.as_bool();
+                Ok(Value::Boolean(left && right))
+            }
+            Expr::Binary(BinaryOp::Or, left, right) => {
+                let left = self.evaluate(left, state)?.as_bool();
+                let right = self.evaluate(right, state)?.as_bool();
+                Ok(Value::Boolean(left || right))
+            }
+
+            Expr::Binary(BinaryOp::Plus, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(left + right)
+            }
+            Expr::Binary(BinaryOp::Minus, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(left - right)
+            }
+            Expr::Binary(BinaryOp::Multiply, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(left * right)
+            }
+            Expr::Binary(BinaryOp::Divide, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(left / right)
+            }
+
+            Expr::Binary(BinaryOp::Equals, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(left == right))
+            }
+            Expr::Binary(BinaryOp::NotEquals, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(!(left == right)))
+            }
+
+            Expr::Binary(BinaryOp::GreaterThan, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(left.as_num() > right.as_num()))
+            }
+            Expr::Binary(BinaryOp::GreaterThanEqual, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(left.as_num() >= right.as_num()))
+            }
+            Expr::Binary(BinaryOp::LessThan, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(left.as_num() < right.as_num()))
+            }
+            Expr::Binary(BinaryOp::LessThanEqual, left, right) => {
+                let left = self.evaluate(left, state)?;
+                let right = self.evaluate(right, state)?;
+                Ok(Value::Boolean(left.as_num() <= right.as_num()))
+            }
+        }
     }
 }
 
-struct NodeState {
-    nodes: HashMap<NodeName, Node>,
+pub struct Nodes(HashMap<NodeName, Node>);
+
+pub struct NodeState {
+    nodes: Nodes,
     conversation: Option<Conversation>,
 }
 
 impl NodeState {
-    fn get_current_step(&mut self) -> (Conversation, &Vec<Step>, usize) {
-        let conversation = self.conversation.take().expect("missing conversation");
+    fn take_conversation(&mut self) -> Conversation {
+        self.conversation.take().expect("missing conversation")
+    }
+    fn get_current_step(&self, conversation: &Conversation) -> (&Vec<Step>, usize) {
         let mut steps = {
-            let current = self.nodes.get(&conversation.node).expect("missing node");
+            let current = self.nodes.0.get(&conversation.node).expect("missing node");
             &current.steps
         };
         let mut current_step_index = conversation.base_index;
@@ -227,7 +391,7 @@ impl NodeState {
             }
         }
 
-        (conversation, steps, current_step_index)
+        (steps, current_step_index)
     }
 }
 
@@ -235,7 +399,7 @@ impl YarnEngine {
     pub fn new(handler: Box<YarnHandler>) -> YarnEngine {
         let mut engine = YarnEngine {
             state: NodeState {
-                nodes: HashMap::new(),
+                nodes: Nodes(HashMap::new()),
                 conversation: None,
             },
             engine_state: EngineState {
@@ -244,12 +408,11 @@ impl YarnEngine {
             },
             handler,
         };
-        engine.register_function("visited".to_string(), 1, Box::new(|args, engine| {
+        engine.register_function("visited".to_string(), 1, Box::new(|args, state| {
             match args[0] {
                 Value::String(ref s) => {
-                    engine
-                        .state
-                        .nodes
+                        state
+                        .0
                         .get(&NodeName(s.to_string()))
                         .map(|node| Value::Boolean(node.visited)).ok_or(())
                 }
@@ -262,7 +425,7 @@ impl YarnEngine {
     pub fn load_from_string(&mut self, s: &str) -> Result<(), ()> {
         let nodes = parse::parse_nodes_from_string(s)?;
         for node in nodes {
-            self.state.nodes.insert(node.title.clone(), node);
+            self.state.nodes.0.insert(node.title.clone(), node);
         }
         Ok(())
     }
@@ -274,7 +437,7 @@ impl YarnEngine {
         callback: Box<FunctionCallback>,
     ) {
         self.engine_state.functions.insert(name, Function {
-            _num_args: num_args,
+            num_args: num_args,
             callback,
         });
     }
@@ -295,7 +458,8 @@ impl YarnEngine {
 
     pub fn choose(&mut self, choice: usize) {
         let conversation = {
-            let (mut conversation, steps, current_step_index) = self.state.get_current_step();
+            let mut conversation = self.state.take_conversation();
+            let (steps, current_step_index) = self.state.get_current_step(&conversation);
             match &steps[current_step_index] {
                 &Step::Dialogue(_, ref choices) => {
                     match choices[choice].kind {
@@ -320,7 +484,8 @@ impl YarnEngine {
     }
 
     fn do_proceed_one_step(&mut self) -> (Conversation, ExecutionStatus) {
-        let (mut conversation, steps, current_step_index) = self.state.get_current_step();
+        let mut conversation = self.state.take_conversation();
+        let (steps, current_step_index) = self.state.get_current_step(&conversation);
 
         if current_step_index >= steps.len() {
             self.handler.end_conversation();
@@ -343,18 +508,18 @@ impl YarnEngine {
                 (true, ExecutionStatus::Continue)
             }
             Step::Assign(ref name, ref expr) => {
-                let value = self.engine_state.evaluate(expr).unwrap();
+                let value = self.engine_state.evaluate(expr, &self.state.nodes).unwrap();
                 self.engine_state.variables.set((*name).clone(), value);
                 (true, ExecutionStatus::Continue)
             }
             Step::Conditional(ref expr, ref _if_steps, ref else_ifs, ref _else_steps) => {
-                let value = self.engine_state.evaluate(expr).unwrap();
+                let value = self.engine_state.evaluate(expr, &self.state.nodes).unwrap();
                 if value.as_bool() {
                     conversation.indexes.push(StepIndex::If(0));
                 } else {
                     let mut matched = false;
                     for (else_if_index, else_ifs) in else_ifs.iter().enumerate() {
-                        let value = self.engine_state.evaluate(&else_ifs.0).unwrap();
+                        let value = self.engine_state.evaluate(&else_ifs.0, &self.state.nodes).unwrap();
                         if value.as_bool() {
                             conversation.indexes.push(StepIndex::ElseIf(else_if_index, 0));
                             matched = true;

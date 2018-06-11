@@ -6,6 +6,7 @@ license = "MIT"
 readme = "README.md"
 description = "A library for parsing and evaluating Yarn Dialogue scripts."
 repository = "https://github.com/jdm/yarn-spool"
+documentation = "https://docs.rs/yarn-spool"
 
 [dev_dependencies]
 easycurses = "0.10.0"

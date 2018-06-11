@@ -2,6 +2,10 @@
 name = "yarn-spool"
 version = "0.1.0"
 authors = ["Josh Matthews <josh@joshmatthews.net>"]
+license = "MIT"
+readme = "README.md"
+description = "A library for parsing and evaluating Yarn Dialogue scripts."
+repository = "https://github.com/jdm/yarn-spool"
 
 [dev_dependencies]
 easycurses = "0.10.0"

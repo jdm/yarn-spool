@@ -1,3 +1,5 @@
+[![Build Status](https://travis-ci.com/jdm/yarn-spool.svg?branch=master)](https://travis-ci.com/jdm/yarn-spool)
+
 This is a library for parsing and evaluating [Yarn Dialogue](https://github.com/thesecretlab/YarnSpinner/tree/master/Documentation/YarnSpinner-Dialogue) scripts in Rust games. It is designed to be embedded with game-provided hooks to affect the game state without making assumptions about how the dialogue will be displayed.
 
 There are two main pieces:

@@ -8,5 +8,8 @@ description = "A library for parsing and evaluating Yarn Dialogue scripts."
 repository = "https://github.com/jdm/yarn-spool"
 documentation = "https://docs.rs/yarn-spool"
 
+[badges]
+travis-ci = { repository = "jdm/yarn-spool", branch = "master" }
+
 [dev_dependencies]
 easycurses = "0.10.0"

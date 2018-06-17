@@ -26,14 +26,14 @@ pub(crate) struct Choice {
 impl Choice {
     pub(crate) fn external(text: String, name: NodeName) -> Choice {
         Choice {
-            text: text,
+            text,
             kind: ChoiceKind::External(name),
         }
     }
 
     pub(crate) fn inline(text: String, steps: Vec<Step>, condition: Option<Expr>) -> Choice {
         Choice {
-            text: text,
+            text,
             kind: ChoiceKind::Inline(steps, condition),
         }
     }
@@ -376,7 +376,7 @@ impl NodeState {
         };
         let mut current_step_index = conversation.base_index;
 
-        for index in conversation.indexes.iter() {
+        for index in &conversation.indexes {
             match (&steps[current_step_index], *index) {
                 (&Step::Dialogue(_, ref choices), StepIndex::Dialogue(choice, step_index)) => {
                     let choice = &choices[choice];
@@ -457,7 +457,7 @@ impl YarnEngine {
         callback: Box<FunctionCallback>,
     ) {
         self.engine_state.functions.insert(name, Function {
-            num_args: num_args,
+            num_args,
             callback,
         });
     }
@@ -485,8 +485,8 @@ impl YarnEngine {
         let conversation = {
             let mut conversation = self.state.take_conversation();
             let (steps, current_step_index) = self.state.get_current_step(&conversation);
-            match &steps[current_step_index] {
-                &Step::Dialogue(_, ref choices) => {
+            match steps[current_step_index] {
+                Step::Dialogue(_, ref choices) => {
                     match choices[choice].kind {
                         ChoiceKind::External(ref node) => conversation.reset((*node).clone()),
                         ChoiceKind::Inline(..) => {
@@ -494,7 +494,7 @@ impl YarnEngine {
                         }
                     }
                 }
-                &Step::Command(..) | &Step::Assign(..) | &Step::Conditional(..) | &Step::Jump(..) =>
+                Step::Command(..) | Step::Assign(..) | Step::Conditional(..) | Step::Jump(..) =>
                     unreachable!(),
             }
             conversation

@@ -555,11 +555,7 @@ impl<'a> Iterator for TokenIterator<'a> {
                 '0'...'9' => {
                     buffer.push(ch);
                     let mut before_decimal = true;
-                    loop {
-                        let ch = match self.next_char() {
-                            Some(ch) => ch,
-                            None => break,
-                        };
+                    while let Some(ch) = self.next_char() {
                         match ch {
                             '0'...'9' => buffer.push(ch),
                             '.' if before_decimal => {
